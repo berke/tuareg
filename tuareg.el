@@ -1172,7 +1172,7 @@ Regexp match data 0 points to the chars."
   '("module" "class" "functor" "object" "type" "val" "inherit"
     "include" "virtual" "constraint" "exception" "external" "open"
     "method" "and" "initializer" "to" "downto" "do" "done" "else"
-    "begin" "end" "let" "in" "then" "with"))
+    "begin" "end" "let" "lwt" "in" "then" "with"))
 
 (defvar tuareg-mode-abbrev-table ()
   "Abbrev table used for Tuareg mode buffers.")
@@ -1303,13 +1303,18 @@ For use on `electric-indent-functions'."
                     ("if" exp "then" exp1 "else" exp1)
                     ;; ("if" exp "then" exp)
                     ("while" exp "do" exp "done")
+                    ("while_lwt" exp "do" exp "done")
                     ("for" forbounds "do" exp "done")
+                    ("for_lwt" forbounds "do" exp "done")
                     (exp1 ";" exp1)
                     ("match" exp "with" branches)
+                    ("match_lwt" exp "with" branches)
                     ("function" branches)
                     ("fun" patterns "->" exp1)
                     ("try" exp "with" branches)
+                    ("try_lwt" exp "with" branches)
                     ("let" defs "in" exp1)
+                    ("lwt" defs "in" exp1)
                     ("object" class-body "end")
                     ("(" exp:>type ")")
                     ("{<" fields ">}"))
@@ -1364,6 +1369,7 @@ For use on `electric-indent-functions'."
             '((nonassoc "function") (nonassoc "->"))
             ;; Resolve ambiguity "(let d in e2); e3" vs "let d in (e2; e3)".
             '((nonassoc "in" "match" "->" "with") (nonassoc ";"))
+            '((nonassoc "in" "match_lwt" "->" "with") (nonassoc ";"))
             ;; Resolve "(if a then b else c);d" vs "if a then b else (c; d)".
             '((nonassoc ";") (nonassoc "else")) ;; ("else" > ";")
             ;; Resolve "match e1 with a → (match e2 with b → e3 | c → e4)"
@@ -1533,8 +1539,8 @@ For use on `electric-indent-functions'."
   ;;       (while (setq rule (cdr (memq 'exp rule)))
   ;;         (push (car rule) leaders))))
   ;;   leaders)
-  '("if" "then" "try" "match" "do" "while" "begin" "in" "when"
-    "downto" "to" "else"))
+  '("if" "then" "try" "try_lwt" "match" "match_lwt" "do" "while" "begin" "in"
+    "when" "downto" "to" "else"))
 
 (defun tuareg-smie--label-colon-p ()
   (and (not (zerop (skip-chars-backward "[[:alnum:]]_")))
@@ -1553,7 +1559,7 @@ Return values can be
   \"=…\" for an equality test."
   (save-excursion
     (let* ((pos (point))
-           (telltale '("type" "let" "module" "class" "and" "external"
+           (telltale '("type" "let" "lwt" "module" "class" "and" "external"
                        "val" "method" "DEFINE" "="
                        "if" "then" "else" "->" ";" ))
            (nearest (tuareg-smie--search-backward telltale)))
@@ -1577,7 +1583,7 @@ Return values can be
                         (equal (tuareg-smie-backward-token) "t->")))
             (setq nearest (tuareg-smie--search-backward telltale)))
           nil))
-       ((not (member nearest '("type" "let" "module" "class" "and"
+       ((not (member nearest '("type" "let" "lwt" "module" "class" "and"
                                "external" "val" "method" "DEFINE")))
         "=…")
        ((and (member nearest '("type" "module"))
@@ -1603,7 +1609,7 @@ Return values can be
      ((member tok '("module" "class" "open"))
       (let ((prev (save-excursion (tuareg-smie--backward-token))))
         (cond
-         ((equal prev "let") (concat "l-" tok))
+         ((or (equal prev "let") (equal prev "lwt")) (concat "l-" tok))
          ((and (member prev '("with" "and")) (equal tok "module")) "w-module")
          (t tok))))
      ;; Distinguish a "type ->" from a "case ->".
@@ -1692,7 +1698,7 @@ Return values can be
       (:before
        (cond
         ((equal token "d=") (smie-rule-parent 2))
-        ((member token '("fun" "match"))
+        ((member token '("fun" "match" "match_lwt"))
          (if (and (not (smie-rule-bolp)) (smie-rule-prev-p "d="))
              (smie-rule-parent tuareg-default-indent)))
         ((equal token "then") (smie-rule-parent))
@@ -1709,7 +1715,7 @@ Return values can be
            (cons 'column (+ 2 (current-column)))))
         ;; Treat purely syntactic block-constructs as being part of their
         ;; parent, when the opening statement is hanging.
-        ((member token '("let" "(" "[" "{" "struct"))
+        ((member token '("let" "lwt" "(" "[" "{" "struct"))
          (when (and (smie-rule-hanging-p)
                     (apply #'smie-rule-prev-p
                            tuareg-smie--exp-operator-leader))
@@ -2048,7 +2054,7 @@ Short cuts for interactions with the toplevel:
   (setq
    tuareg-font-lock-keywords
    `(,@(if (tuareg-editing-ls3)
-           `((,(concat "\\<\\(let[ \t\n]+"
+           `((,(concat "\\<\\(l[ew]t[ \t\n]+"
                        (regexp-opt '("clock" "node" "static")) "\\|"
                        (regexp-opt '("present" "automaton" "where" "match"
                                      "with" "do" "done" "unless" "until"
@@ -2059,8 +2065,8 @@ Short cuts for interactions with the toplevel:
                (regexp-opt '("external" "open" "include" "sig" "struct"
                              "module" "functor" "type"
                              "virtual" "constraint" "class" "in" "inherit"
-                             "initializer" "let" "rec" "object" "and" "begin"
-                             "end"))
+                             "initializer" "let" "lwt" "rec" "object" "and"
+			     "begin" "end"))
                "\\>\\|with[ \t\n]+\\(type\\|module\\)\\>"
                "\\|\\(method\\|val\\)\\>!?"
                "\\([ \t\n]\\(virtual\\|private\\)\\>\\)*\\)")
@@ -2074,16 +2080,17 @@ Short cuts for interactions with the toplevel:
             '(("\\.<\\|>\\.\\|\\.~\\|\\.!"
                0 tuareg-font-lock-multistage-face nil nil)))
      ("\\<\\(false\\|true\\)\\>" 0 font-lock-constant-face nil nil)
-     (,(regexp-opt '("as" "do" "of" "done" "downto" "else" "for" "if"
+     (,(regexp-opt '("as" "do" "of" "done" "downto" "else" "for" "for_lwt" "if"
                      "mutable" "new" "private"
-                     "then" "to" "try" "when" "while" "match" "with"
+                     "then" "to" "try" "try_lwt" "when" "while" "while_lwt"
+		     "match" "with"
                      "lazy" "exception" "assert" "fun" "function") 'words)
       0 font-lock-keyword-face nil nil)
      ,@(if (tuareg-editing-ls3)
            `(("\\<\\(merge\\|emit\\|period\\)\\>"
               0 font-lock-keyword-face nil nil)))
      (,(regexp-opt '("failwith" "failwithf" "exit" "invalid_arg"
-                     "parser" "raise") 'words)
+                     "parser" "raise" "raise_lwt") 'words)
       0 font-lock-builtin-face nil nil)
      ("\\([?~]\\<[_[:alpha:]]\\w*\\) *[\t\n]? *:[^:>=]"
       1 font-lock-constant-face keep nil)
@@ -2295,12 +2302,12 @@ Short cuts for interactions with the toplevel:
     tuareg-extra-unindent-regexp))
 
 (defconst tuareg-keyword-regexp
-  (concat (tuareg-ro "object" "initializer" "and" "constraint" "class"
-                     "match" "module" "method" "mutable" "sig" "struct" "begin"
-                     "else" "exception" "external" "to" "then" "try" "type"
-                     "virtual" "val" "while" "when" "with" "if" "in" "inherit"
-                     "for" "fun" "functor" "function" "let" "do" "downto"
-                     "of")
+  (concat (tuareg-ro "object" "initializer" "and" "constraint" "class" "match"
+		     "match_lwt" "module" "method" "mutable" "sig" "struct"
+		     "begin" "else" "exception" "external" "to" "then" "try"
+		     "try_lwt" "type" "virtual" "val" "while" "when" "with" "if"
+		     "in" "inherit" "for" "fun" "functor" "function" "let" "lwt"
+		     "do" "downto" "of")
           "\\|->\\|[;,|]")
   "Regexp for all recognized keywords.")
 
@@ -2374,7 +2381,8 @@ delimiters.  For synchronous programming.")
     tuareg-matching-kwop-regexp))
 
 (defconst tuareg-block-regexp
-  (concat (tuareg-ro "for" "while" "do" "if" "begin" "sig" "struct" "object")
+  (concat (tuareg-ro "for" "for_lwt" "while" "while_lwt" "do" "if" "begin" "sig"
+		     "struct" "object")
           "\\|[][(){}]\\|\\*)"))
 
 (defconst tuareg-find-kwop-regexp
@@ -2391,7 +2399,7 @@ delimiters.  For synchronous programming.")
 
 (defconst tuareg-governing-phrase-regexp
   (tuareg-ro "val" "type" "method" "module" "constraint" "class" "inherit"
-             "initializer" "external" "exception" "open" "let" "object"
+             "initializer" "external" "exception" "open" "let" "lwt" "object"
              "include")
   "Regexp matching tuareg phrase delimitors.")
 
@@ -2405,7 +2413,9 @@ delimiters.  For synchronous programming.")
     ("begin" . tuareg-begin-indent)
     (".<" . tuareg-begin-indent)
     ("for" . tuareg-for-while-indent)
+    ("for_lwt" . tuareg-for-while-indent)
     ("while" . tuareg-for-while-indent)
+    ("while_lwt" . tuareg-for-while-indent)
     ("do" . tuareg-do-indent)
     ("val" . tuareg-val-indent)
     ("fun" . tuareg-fun-indent)
@@ -2414,7 +2424,9 @@ delimiters.  For synchronous programming.")
     ("else" . tuareg-if-then-else-indent)
     ("let" . tuareg-let-indent)
     ("match" . tuareg-match-indent)
+    ("match_lwt" . tuareg-match-indent)
     ("try" . tuareg-try-indent)
+    ("try_lwt" . tuareg-try-indent)
 
     ;; Case match keywords
     ("function" . tuareg-function-indent)
@@ -2455,7 +2467,7 @@ delimiters.  For synchronous programming.")
 (defun tuareg-find-leading-kwop-match (kwop)
   (funcall (cdr (assoc kwop tuareg-leading-kwop-alist))))
 
-(defconst tuareg-binding-regexp "\\(\\<and\\>\\|(*\\<let\\>\\)")
+(defconst tuareg-binding-regexp "\\(\\<and\\>\\|(*\\<l[ew]t\\>\\)")
 
 (defun tuareg-assoc-indent (kwop &optional look-for-let-or-and)
   "Return relative indentation of the keyword given in argument."
@@ -2528,12 +2540,13 @@ Returns the actual text of the word, if found."
 ;; Static regexps
 (defconst tuareg-find-and-match-regexp
   (concat (tuareg-ro "do" "done" "else" "end" "in" "then" "downto"
-                     "for" "while" "do" "if" "begin" "sig" "struct" "class"
-                     "exception" "let" "in" "type" "val" "module")
+		     "for" "for_lwt" "while" "while_lwt" "do" "if" "begin" "sig"
+		     "struct" "class" "exception" "let" "lwt" "in" "type" "val"
+		     "module")
           "\\|[][(){}]\\|\\*)"))
 (defconst tuareg-find-phrase-beginning-regexp
   (concat (tuareg-ro "end" "type" "module" "sig" "struct" "class"
-                     "exception" "open" "let")
+                     "exception" "open" "let" "lwt")
           "\\|^#[ \t]*[a-z][_a-z]*\\>\\|;;"))
 (defconst tuareg-find-phrase-beginning-and-regexp
   (concat "\\<\\(and\\)\\>\\|" tuareg-find-phrase-beginning-regexp))
@@ -2556,36 +2569,38 @@ Gathered here for memoization and dynamic reconfiguration purposes."
   (setq
    tuareg-find-comma-match-regexp
     (tuareg-make-find-kwop-regexp
-     (concat (tuareg-ro "and" "match" "begin" "else" "exception" "then" "try"
-                        "with" "or" "fun" "function" "let" "do")
+     (concat (tuareg-ro "and" "match" "match_lwt" "begin" "else" "exception"
+			"then" "try" "try_lwt" "with" "or" "fun" "function"
+			"let" "lwt" "do")
              "\\|->\\|[[{(]"))
    tuareg-find-with-match-regexp
     (tuareg-make-find-kwop-regexp
-     (concat (tuareg-ro "match" "try" "module" "begin" "with" "type")
+     (concat (tuareg-ro "match" "try" "lwt" "module" "begin" "with" "type")
              "\\|[[{(]"))
    tuareg-find-in-match-regexp
 ;;    (tuareg-make-find-kwop-regexp (tuareg-ro "let" "open"))
-    (tuareg-make-find-kwop-regexp (tuareg-ro "let"))
+    (tuareg-make-find-kwop-regexp (tuareg-ro "let" "lwt"))
    tuareg-find-else-match-regexp
     (tuareg-make-find-kwop-regexp ";")
    tuareg-find-do-match-regexp
     (tuareg-make-find-kwop-regexp "->")
    tuareg-find-=-match-regexp
     (tuareg-make-find-kwop-regexp
-     (concat (tuareg-ro "val" "let" "method" "module" "type" "class" "when"
-                        "if" "in" "do")
+     (concat (tuareg-ro "val" "let" "lwt" "method" "module" "type" "class"
+			"when" "if" "in" "do")
              "\\|="))
    tuareg-find-pipe-match-regexp
     (tuareg-make-find-kwop-regexp (tuareg-give-match-pipe-kwop-regexp))
    tuareg-find-arrow-match-regexp
     (tuareg-make-find-kwop-regexp
-     (concat (tuareg-ro "external" "type" "val" "method" "let" "with" "fun"
-                        "function" "functor" "class")
+     (concat (tuareg-ro "external" "type" "val" "method" "let" "lwt" "with"
+			"fun" "function" "functor" "class")
              "\\|[|;]"))
    tuareg-find-semicolon-match-regexp
     (tuareg-make-find-kwop-regexp
      (concat ";" tuareg-no-more-code-this-line-regexp "\\|->\\|"
-             (tuareg-ro "let" "method" "with" "try" "initializer")))
+	     (tuareg-ro "let" "lwt" "method" "with" "try" "try_lwt"
+			"initializer")))
    tuareg-find-phrase-indentation-regexp
     (tuareg-make-find-kwop-regexp
      (concat tuareg-governing-phrase-regexp "\\|" (tuareg-ro "and" "every")))
@@ -2604,8 +2619,8 @@ Gathered here for memoization and dynamic reconfiguration purposes."
     (concat tuareg-find-comma-match-regexp "\\|=")
    tuareg-find-monadic-match-regexp
     (concat tuareg-block-regexp "\\|\\([;=]\\)\\|\\(->\\)\\|"
-            (tuareg-ro "val" "let" "method" "module" "type" "class" "when"
-                       "if" "in" "do" "done" "end"))))
+	    (tuareg-ro "val" "let" "lwt" "method" "module" "type" "class" "when"
+		       "if" "in" "do" "done" "end"))))
 
 (defun tuareg-strip-trailing-whitespace (string)
   (if (string-match "[ \t]*\\'" string)
@@ -2826,7 +2841,7 @@ If found, return the actual text of the keyword or operator."
     (looking-at tuareg-if-when-regexp)))
 
 (defconst tuareg-captive-regexp
-  (tuareg-ro "let" "if" "when" "module" "type" "class"))
+  (tuareg-ro "let" "lwt" "if" "when" "module" "type" "class"))
 (defun tuareg-captive-= ()
   (save-excursion
     (tuareg-find-=-match)
@@ -2955,8 +2970,13 @@ If found, return the actual text of the keyword or operator."
         (+ (tuareg-paren-or-indentation-column) tuareg-in-indent))
        ((string= kwop "let")
         (+ (current-column) tuareg-let-indent))
+       ((string= kwop "lwt")
+        (+ (current-column) tuareg-let-indent))
        ((string= kwop "try")
         (forward-char 3) (skip-syntax-forward " ")
+        (current-column))
+       ((string= kwop "try_lwt")
+        (forward-char 7) (skip-syntax-forward " ")
         (current-column))
        (t (tuareg-paren-or-indentation-indent)))
      kwop point)))
@@ -2969,7 +2989,7 @@ If found, return the actual text of the keyword or operator."
      (setq ,kwop (tuareg-find-and-match))))
 
 (defconst tuareg-phrase-regexp-1 (tuareg-ro "module" "type"))
-(defconst tuareg-phrase-regexp-2 (tuareg-ro "and" "let" "module" "with"))
+(defconst tuareg-phrase-regexp-2 (tuareg-ro "and" "let" "lwt" "module" "with"))
 (defconst tuareg-phrase-regexp-3
   (tuareg-ro "and" "end" "every" "in" "with"))
 (defun tuareg-find-phrase-indentation (&optional phrase-break)
@@ -3018,7 +3038,8 @@ If found, return the actual text of the keyword or operator."
                          (setq tmpkwop (tuareg-find-in-match))
                          (tuareg-reset-and-kwop tmpkwop)
                          (setq curr (point))
-                         (and (string= tmpkwop "let")
+			 (and (or (string= tmpkwop "let") (string= tmpkwop
+								   "lwt"))
                               (not (tuareg-looking-at-internal-let))))))
              (goto-char curr)
              (tuareg-find-phrase-indentation phrase-break))
@@ -3026,7 +3047,7 @@ If found, return the actual text of the keyword or operator."
              (end-of-line)
              (tuareg-skip-blank-and-comments)
              (current-column))
-            ((string= kwop "let")
+            ((or (string= kwop "let") (string= kwop "let"))
              (if (tuareg-looking-at-internal-let)
                  (tuareg-find-phrase-indentation phrase-break)
                  (current-column)))
@@ -3115,8 +3136,8 @@ Returns t iff skipped to indentation."
 
 (defconst tuareg-internal-let-regexp
   (concat "[[({;=]\\|"
-           (tuareg-ro "begin" "open" "if" "in" "do" "try" "then" "else"
-                      "match" "while" "when")))
+	   (tuareg-ro "begin" "open" "if" "in" "do" "try" "try_lwt" "then"
+		      "else" "match" "while" "when")))
 (defun tuareg-looking-at-internal-let ()
   (save-excursion
     (tuareg-find-meaningful-word)
@@ -3127,7 +3148,7 @@ Returns t iff skipped to indentation."
          (or (looking-at tuareg-internal-let-regexp)
              (looking-at tuareg-operator-regexp)))))
 
-(defconst tuareg-false-module-regexp (tuareg-ro "and" "let" "with"))
+(defconst tuareg-false-module-regexp (tuareg-ro "and" "let" "lwt" "with"))
 (defun tuareg-looking-at-false-module ()
   (save-excursion
     (tuareg-find-meaningful-word)
@@ -3287,7 +3308,8 @@ Returns t iff skipped to indentation."
            (tuareg-find-arrow-match)
            (+ (current-column) tuareg-default-indent))
           ((or (string= kwop "val")
-               (string= kwop "let"))
+               (string= kwop "let")
+               (string= kwop "lwt"))
            (goto-char pos)
            (+ (current-column) tuareg-val-indent))
           ((string= kwop "type")
@@ -3358,7 +3380,7 @@ Returns t iff skipped to indentation."
                                (char-equal ?\{ (preceding-char))))
                       (tuareg-backward-char)
                       (tuareg-indent-from-paren t start-pos))
-                     ((and (looking-at "\\<let\\>") (string= mkwop "in"))
+                     ((and (looking-at "\\<l[ew]t\\>") (string= mkwop "in"))
                       (+ (current-column) tuareg-in-indent))
                      (t (+ (tuareg-paren-or-indentation-column)
                            (tuareg-assoc-indent mkwop)))))
@@ -3368,7 +3390,7 @@ Returns t iff skipped to indentation."
              (tuareg-indent-from-paren leading-operator start-pos)
            (+ tuareg-default-indent
               (tuareg-indent-from-paren leading-operator start-pos))))
-        ((or (string= kwop "let") (string= kwop "and"))
+        ((or (string= kwop "let") (string= kwop "lwt") (string= kwop "and"))
          (tuareg-back-to-paren-or-indentation)
          (+ (tuareg-paren-or-indentation-indent)
             (tuareg-assoc-indent kwop t)))
@@ -3413,7 +3435,8 @@ Returns t iff skipped to indentation."
               (tuareg-assoc-indent kwop t)))))
 
 (defconst tuareg-=-indent-regexp-1
-  (tuareg-ro "val" "let" "method" "module" "class" "when" "for" "if" "do"))
+  (tuareg-ro "val" "let" "lwt" "method" "module" "class" "when" "for" "if"
+	     "do"))
 
 (defun tuareg-compute-=-indent (start-pos)
   (let ((current-column-module-type nil) (kwop1 (tuareg-find-=-match))
@@ -3459,7 +3482,7 @@ Returns t iff skipped to indentation."
   (current-column))
 
 (defconst tuareg-definitions-regexp
-  (tuareg-ro "and" "val" "type" "module" "class" "exception" "let")
+  (tuareg-ro "and" "val" "type" "module" "class" "exception" "let" "lwt")
   "Regexp matching definition phrases.")
 
 (defun tuareg-compute-normal-indent ()
@@ -3599,6 +3622,8 @@ Returns t iff skipped to indentation."
                       (string= matching-kwop "struct"))
                   (tuareg-paren-or-indentation-indent))
                  ((or (string= matching-kwop "try")
+                      (string= matching-kwop "try_lwt")
+                      (string= matching-kwop "match_lwt")
                       (string= matching-kwop "match"))
                   (tuareg-compute-kwop-indent-general kwop matching-kwop))
                  (t (goto-char old-point)
@@ -3618,6 +3643,7 @@ Returns t iff skipped to indentation."
                (and (string= kwop "end")
                     (tuareg-editing-ls3)
                     (or (string= matching-kwop "match")
+                        (string= matching-kwop "match_lwt")
                         (string= matching-kwop "automaton")
                         (string= matching-kwop "present"))))
            (if (tuareg-in-indentation-p)
@@ -3625,7 +3651,10 @@ Returns t iff skipped to indentation."
              (tuareg-paren-or-indentation-column)))
           ((string= kwop "in")
            (+ (current-column)
-              (tuareg-add-default-indent (string= matching-kwop "let"))))
+              (tuareg-add-default-indent
+		(or
+		  (string= matching-kwop "let")
+		  (string= matching-kwop "lwt")))))
           ((not (string= kwop "and")) ; pretty general case
            (tuareg-compute-kwop-indent-general kwop matching-kwop))
           ((string= matching-kwop "with")
@@ -3687,7 +3716,8 @@ Compute new indentation based on OCaml syntax."
        (t (current-column))))
      ((tuareg-in-literal-p)
       (current-column))
-     ((or (looking-at "\\<let\\>") (looking-at "\\<open\\>"))
+     ((or (looking-at "\\<l[ew]t\\>")
+	  (looking-at "\\<open\\>"))
       (if (tuareg-looking-at-internal-let)
           (if (tuareg-looking-at-in-let)
               (progn
@@ -3910,8 +3940,8 @@ by |, insert one |."
       (tuareg-find-kwop tuareg-find-phrase-beginning-regexp))
     (while (and (> (point) (point-min)) (< (point) old-point)
                 (or (not (looking-at tuareg-find-phrase-beginning-and-regexp))
-                    (and (looking-at "\\<let\\>")
-                         (tuareg-looking-at-internal-let))
+		    (and (looking-at "\\<l[ew]t\\>")
+			 (tuareg-looking-at-internal-let))
                     (and (looking-at "\\<and\\>")
                          (save-excursion
                            (tuareg-find-and-match)
